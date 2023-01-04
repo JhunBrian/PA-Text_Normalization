@@ -9,6 +9,40 @@ from warnings import filterwarnings as fws
 fws('ignore')
     
 class Normalizer:
+    
+    """
+    A class for normalizing text data.
+    
+    Parameters
+    ----------
+    data: pandas.Series
+        A series of text data to be normalized.
+    
+    Attributes
+    ----------
+    data: pandas.Series
+        The input text data.
+    
+    Methods
+    -------
+    remove_punctuation()
+        Remove punctuation from the text data.
+        
+    expand_contractions()
+        Expand contractions in the text data.
+        
+    remove_stop_words()
+        Remove stop words from the text data.
+        
+    remove_repeating_characters()
+        Remove repeating characters from the text data.
+        
+    correct_spelling()
+        Correct spelling errors in the text data.
+        
+    normalize()
+        Normalize the text data by applying all of the above transformations.
+    """
     def __init__(self, data):
         self.data = data.dropna()
         
