@@ -1,78 +1,90 @@
-import pandas as pd
 import re
-import json
+import string
 import nltk
-from textblob import TextBlob
-from tqdm.notebook import tqdm
+import pandas as pd
+import json
 
-from warnings import filterwarnings as fws
-fws('ignore')
-    
+import contractions
+from nltk.stem import WordNetLemmatizer
+from nltk.stem import PorterStemmer
+from nltk.corpus import stopwords
+from nltk.corpus import words
+
 class Normalizer:
+    def __init__(self):
+        self.lemmatizer = WordNetLemmatizer()
+        self.stemmer = PorterStemmer()
+        self.stop_words = stopwords.words('english')
+        self.english_words = set(words.words())
+
+    def lowercase(self, data):
+        return data.lower()
+    
+    def remove_punctuations_and_emojis(self, data):
+
+        emoji_pattern = re.compile("["
+            u"\U0001F600-\U0001F64F"  # emoticons
+            u"\U0001F300-\U0001F5FF"  # symbols & pictographs
+            u"\U0001F680-\U0001F6FF"  # transport & map symbols
+            u"\U0001F1E0-\U0001F1FF"  # flags (iOS)
+                               "]+", flags=re.UNICODE)
+
+        data = data.translate(str.maketrans('', '', string.punctuation))
+        data = re.sub(emoji_pattern, '', data)
+        return data
+    
+    def expand_sentence(self, data):
+        contraction_map = {k.lower():v.lower() for k,v in contractions.contractions_dict.items()}
+
+        words = data.split()
+        expanded_words = []
+        for word in words:
+            if word in contraction_map:
+                expanded_words.append(contraction_map[word])
+            else:
+                expanded_words.append(word)
+        return " ".join(expanded_words)
+    
+    def remove_stop_words(self, data):
+        return " ".join([word for word in data.split() if word not in self.stop_words])
+    
+    def remove_non_english_words(self, data):
+        return " ".join([word for word in data.split() if word in self.english_words])
+    
+    def lemmatize(self, data):
+        return " ".join([self.lemmatizer.lemmatize(word) for word in data.split()])
+    
+    def stem(self, data):
+        return " ".join([self.stemmer.stem(word) for word in data.split()])
+    
+#     def word_tokenize(self, data):
+#         return data.split()
+
+    def normalize(self, data):
+        data = data.apply(self.lowercase)
+        data = data.apply(self.remove_punctuations_and_emojis)
+        data = data.apply(self.expand_sentence)
+        data = data.apply(self.remove_stop_words)
+        data = data.apply(self.remove_non_english_words)
+        data = data.apply(self.lemmatize)
+        data = data.apply(self.stem)
+#         data = data.apply(self.word_tokenize)
+
+        return data
+
+from sklearn.feature_extraction.text import CountVectorizer, TfidfVectorizer
+# import pandas as pd
+
+class Encoder:
     def __init__(self, data):
-        self.data = data.dropna()
-        
-    def wrap_tqdm(self, function, desc):
-        corrected = []
-        for serie in tqdm(self.data, desc=desc):
-            correct = function(serie)
-            corrected.append(correct)
-        return pd.Series(corrected)
-        
-    def remove_punctuation(self):
-        punc_x_lower = lambda x : re.sub(r'[^\w\s]', '', x.lower())
-            
-        self.data = self.wrap_tqdm(punc_x_lower, 'Removing Punctuations')
-        return self.data
+        self.data = data
     
-    def expand_contractions(self):
-        def expand_sentence(sentence):
-            with open('contractions.json') as f:
-                contraction = json.load(f)
-            contraction_map = {k.lower():v for k,v in contraction.items()}
-            
-            words = sentence.split()
-            expanded_words = []
-            for word in words:
-                if word in contraction_map:
-                    expanded_words.append(contraction_map[word])
-                else:
-                    expanded_words.append(word)
-            return " ".join(expanded_words)
-        
-        self.data = self.wrap_tqdm(expand_sentence, 'Expanding Contraction')
-        return self.data
+    def bow(self, n_gram=(1,1)):
+        vectorizer = CountVectorizer(min_df=1, ngram_range=n_gram)
+        bow = vectorizer.fit_transform(self.data)
+        return pd.DataFrame(bow.toarray(), columns=vectorizer.get_feature_names_out())
     
-    def remove_stop_words(self):
-        stop_words = set(nltk.corpus.stopwords.words('english'))
-        stop_word_func = lambda x: ' '.join([word for word in x.split() if word not in stop_words])
-            
-        self.data = self.wrap_tqdm(stop_word_func, 'Removing Stopwords')
-        return self.data
-    
-    def remove_repeating_characters(self):
-        def remove_repeats(text):
-            return re.sub(r'(\b\w+)\1+\b', r'\1', text)
-            
-        self.data = self.wrap_tqdm(remove_repeats, 'Removing Repeating Characters')
-        return self.data
-    
-    def correct_spelling(self):
-        def correct_text(sentence):
-            corrected_words = []
-            for word in sentence.split():
-                corrected_word = str(TextBlob(word).correct())
-                corrected_words.append(corrected_word)
-            return ' '.join(corrected_words)
-            
-        self.data = self.wrap_tqdm(correct_text, 'Correcting Spelling')
-        return self.data
-    
-    def normalize(self):
-        self.remove_punctuation()
-        self.expand_contractions()
-        self.remove_stop_words()
-        self.remove_repeating_characters()
-        self.correct_spelling()
-        
-        return self.data
+    def tf_idf(self):
+        vectorizer = TfidfVectorizer(norm='l2', smooth_idf=True, use_idf=True)
+        tfidf = vectorizer.fit_transform(self.data)
+        return pd.DataFrame(tfidf.toarray(), columns=vectorizer.get_feature_names_out())
